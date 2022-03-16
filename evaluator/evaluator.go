@@ -186,11 +186,11 @@ func (bh PokerHand) Compare(another PokerHand) CompareResult {
 func compareTwoCards(a, b card.Card) CompareResult {
 	switch {
 	case a.Rank > b.Rank:
-		return 1
+		return ResultHigher
 	case a.Rank < b.Rank:
-		return -1
+		return ResultLower
 	default:
-		return 0
+		return ResultIdentical
 	}
 }
 
