@@ -413,3 +413,22 @@ func BenchmarkEvaluate(b *testing.B) {
 		}
 	})
 }
+
+func TestCompareHands(t *testing.T) {
+	h1 := PokerHand{
+		Rank:  RankHighCard,
+		Cards: []card.Card{card.NewCard("As"), card.NewCard("Qs"), card.NewCard("Jc"), card.NewCard("9d"), card.NewCard("7c")},
+	}
+	h2 := PokerHand{
+		Rank:  RankHighCard,
+		Cards: []card.Card{card.NewCard("Ks"), card.NewCard("Qs"), card.NewCard("Jc"), card.NewCard("9d"), card.NewCard("7c")},
+	}
+	h3 := PokerHand{
+		Rank:  RankHighCard,
+		Cards: []card.Card{card.NewCard("As"), card.NewCard("Qs"), card.NewCard("Jc"), card.NewCard("9d"), card.NewCard("7c")},
+	}
+
+	assert.EqualValues(t, 1, h1.Compare(h2))
+	assert.EqualValues(t, -1, h2.Compare(h1))
+	assert.EqualValues(t, 0, h1.Compare(h3))
+}

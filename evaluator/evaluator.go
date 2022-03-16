@@ -12,22 +12,24 @@ type (
 	Evaluator interface {
 		MinimalCardCounts() int
 		Rank() HandRank
-		Evaluate(...card.Card) (BestHand, bool)
+		Evaluate(...card.Card) (PokerHand, bool)
 	}
 
 	EvaluatorManager interface {
 		Register(Evaluator) error
 		Find(HandRank) Evaluator
-		Evaluate(...card.Card) BestHand
+		Evaluate(...card.Card) PokerHand
 	}
 
 	// HandRank 手牌等级
 	HandRank int
 
-	BestHand struct {
+	PokerHand struct {
 		Rank  HandRank
 		Cards []card.Card
 	}
+
+	CompareResult int
 
 	// straightFlushEvaluator 同花顺（包括皇家同花顺）
 	straightFlushEvaluator struct {
@@ -77,6 +79,12 @@ const (
 	RankRoyalFlush                    // 皇家同花顺 eg. T♥️J♥️Q♥️K♥️A♥️
 )
 
+const (
+	ResultHigher    CompareResult = 1
+	ResultLower     CompareResult = -1
+	ResultIdentical CompareResult = 0
+)
+
 var (
 	handRankDescriptions = map[HandRank]string{
 		RankHighCard:      "High Card",
@@ -108,12 +116,82 @@ var (
 	defaultEvaluatorManager EvaluatorManager
 )
 
-func (bh BestHand) String() string {
+func (bh PokerHand) String() string {
 	output := handRankDescriptions[bh.Rank] + ": "
 	for _, card := range bh.Cards {
 		output += card.String()
 	}
 	return output
+}
+
+func (bh PokerHand) Compare(another PokerHand) CompareResult {
+	if bh.Rank > another.Rank {
+		return ResultHigher
+	}
+	if bh.Rank < another.Rank {
+		return ResultLower
+	}
+
+	switch bh.Rank {
+	case RankHighCard, RankFlush:
+		for index, card := range bh.Cards {
+			if ret := compareTwoCards(card, another.Cards[index]); ret != 0 {
+				return ret
+			}
+		}
+		return ResultIdentical
+
+	case RankOnePair:
+		if ret := compareTwoCards(bh.Cards[0], another.Cards[0]); ret != 0 {
+			return ret
+		}
+		for i := 2; i < len(bh.Cards); i++ {
+			if ret := compareTwoCards(bh.Cards[i], another.Cards[i]); ret != 0 {
+				return ret
+			}
+		}
+		return ResultIdentical
+
+	case RankTwoParis, RankFourOfAKind:
+		if ret := compareTwoCards(bh.Cards[0], another.Cards[0]); ret != 0 {
+			return ret
+		}
+		if ret := compareTwoCards(bh.Cards[2], another.Cards[2]); ret != 0 {
+			return ret
+		}
+		if len(bh.Cards) > 4 {
+			return compareTwoCards(bh.Cards[4], another.Cards[4])
+		}
+		return ResultIdentical
+
+	case RankThreeOfAKind:
+		if ret := compareTwoCards(bh.Cards[0], another.Cards[0]); ret != 0 {
+			return ret
+		}
+		for i := 3; i < len(bh.Cards); i++ {
+			if ret := compareTwoCards(bh.Cards[i], another.Cards[i]); ret != 0 {
+				return ret
+			}
+		}
+		return ResultIdentical
+
+	case RankStraight, RankStraightFlush, RankRoyalFlush:
+		return compareTwoCards(bh.Cards[0], another.Cards[0])
+
+	default:
+		return ResultIdentical
+	}
+}
+
+func compareTwoCards(a, b card.Card) CompareResult {
+	switch {
+	case a.Rank > b.Rank:
+		return 1
+	case a.Rank < b.Rank:
+		return -1
+	default:
+		return 0
+	}
 }
 
 func newDefaultEvaluatorManager() *simpleEvaluatorManager {
@@ -153,13 +231,13 @@ func (em *simpleEvaluatorManager) Register(ev Evaluator) error {
 	return nil
 }
 
-func (em *simpleEvaluatorManager) Evaluate(cards ...card.Card) BestHand {
+func (em *simpleEvaluatorManager) Evaluate(cards ...card.Card) PokerHand {
 	for _, evaluator := range em.evaluators {
 		if best, ok := evaluator.Evaluate(cards...); ok {
 			return best
 		}
 	}
-	return BestHand{}
+	return PokerHand{}
 }
 
 func (em *simpleEvaluatorManager) Find(rank HandRank) Evaluator {
@@ -177,9 +255,9 @@ func (sf *straightFlushEvaluator) Rank() HandRank {
 	return RankStraightFlush
 }
 
-func (sf *straightFlushEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) {
+func (sf *straightFlushEvaluator) Evaluate(cards ...card.Card) (PokerHand, bool) {
 	if len(cards) < 5 {
-		return BestHand{}, false
+		return PokerHand{}, false
 	}
 
 	// 是否有同花
@@ -192,7 +270,7 @@ func (sf *straightFlushEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) 
 		}
 	}
 	if suitOfFlush == card.SuitUnknown {
-		return BestHand{}, false
+		return PokerHand{}, false
 	}
 
 	flushCards := suits[suitOfFlush]
@@ -219,7 +297,7 @@ func (sf *straightFlushEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) 
 		if current.Rank == flushCards[startAt].Rank+card.Rank((-1)*(i-startAt)) {
 			straightCount++
 			if straightCount >= 5 { // 命中同花顺
-				bestFiveHand := &BestHand{
+				bestFiveHand := &PokerHand{
 					Rank:  RankStraightFlush,
 					Cards: []card.Card{flushCards[i-4], flushCards[i-3], flushCards[i-2], flushCards[i-1], flushCards[i]},
 				}
@@ -228,7 +306,7 @@ func (sf *straightFlushEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) 
 						bestFiveHand.Rank = RankRoyalFlush
 						return *bestFiveHand, true
 					} else {
-						return BestHand{}, false
+						return PokerHand{}, false
 					}
 				}
 
@@ -246,7 +324,7 @@ func (sf *straightFlushEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) 
 			break
 		}
 	}
-	return BestHand{}, false
+	return PokerHand{}, false
 }
 
 func (fourOfAKindEvaluator) MinimalCardCounts() int {
@@ -257,9 +335,9 @@ func (four fourOfAKindEvaluator) Rank() HandRank {
 	return RankFourOfAKind
 }
 
-func (four fourOfAKindEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) {
+func (four fourOfAKindEvaluator) Evaluate(cards ...card.Card) (PokerHand, bool) {
 	if len(cards) < 4 {
-		return BestHand{}, false
+		return PokerHand{}, false
 	}
 
 	var hitRank card.Rank
@@ -272,9 +350,9 @@ func (four fourOfAKindEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) {
 	}
 
 	if hitRank == 0 {
-		return BestHand{}, false
+		return PokerHand{}, false
 	}
-	best := &BestHand{
+	best := &PokerHand{
 		Rank: RankFourOfAKind,
 		Cards: []card.Card{
 			{Rank: hitRank, Suit: card.SuitClubs},
@@ -304,9 +382,9 @@ func (fh fullHouseEvaluator) Rank() HandRank {
 	return RankFullHouse
 }
 
-func (fh fullHouseEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) {
+func (fh fullHouseEvaluator) Evaluate(cards ...card.Card) (PokerHand, bool) {
 	if len(cards) < 5 {
-		return BestHand{}, false
+		return PokerHand{}, false
 	}
 
 	Ranks := make(map[card.Rank][]card.Card)
@@ -350,10 +428,10 @@ func (fh fullHouseEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) {
 	}
 
 	if !(hasSet > 0 && hasPair > 0) {
-		return BestHand{}, false
+		return PokerHand{}, false
 	}
 
-	return BestHand{
+	return PokerHand{
 		Rank: RankFullHouse,
 		Cards: []card.Card{
 			Ranks[biggerSet][0],
@@ -373,9 +451,9 @@ func (flush flushEvaluator) Rank() HandRank {
 	return RankFlush
 }
 
-func (flush flushEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) {
+func (flush flushEvaluator) Evaluate(cards ...card.Card) (PokerHand, bool) {
 	if len(cards) < 5 {
-		return BestHand{}, false
+		return PokerHand{}, false
 	}
 
 	suits := make(map[card.Suit][]card.Card)
@@ -387,14 +465,14 @@ func (flush flushEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) {
 		}
 	}
 	if suitOfFlush == card.SuitUnknown {
-		return BestHand{}, false
+		return PokerHand{}, false
 	}
 
 	flushCards := suits[suitOfFlush]
 	sort.Slice(flushCards, func(i, j int) bool {
 		return flushCards[i].Rank > flushCards[j].Rank
 	})
-	return BestHand{
+	return PokerHand{
 		Rank: RankFlush,
 		Cards: []card.Card{
 			flushCards[0],
@@ -414,9 +492,9 @@ func (straight straightEvaluator) Rank() HandRank {
 	return RankStraight
 }
 
-func (straight straightEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) {
+func (straight straightEvaluator) Evaluate(cards ...card.Card) (PokerHand, bool) {
 	if len(cards) < 5 {
-		return BestHand{}, false
+		return PokerHand{}, false
 	}
 
 	// 排序
@@ -444,7 +522,7 @@ func (straight straightEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) 
 			previousRank = expectedRank
 			counts++
 			if counts >= 5 {
-				best := &BestHand{Rank: RankStraight, Cards: []card.Card{cards[startAt]}}
+				best := &PokerHand{Rank: RankStraight, Cards: []card.Card{cards[startAt]}}
 				founded := 1
 				for j := startAt + 1; j <= i; j++ {
 					if cards[j].Rank == best.Cards[founded-1].Rank { // 遇到对子跳过
@@ -473,7 +551,7 @@ func (straight straightEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) 
 		}
 		// 有对子，不处理
 	}
-	return BestHand{}, false
+	return PokerHand{}, false
 }
 
 func (set threeOfAKindEvaluator) MinimalCardCounts() int {
@@ -484,9 +562,9 @@ func (set threeOfAKindEvaluator) Rank() HandRank {
 	return RankThreeOfAKind
 }
 
-func (set threeOfAKindEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) {
+func (set threeOfAKindEvaluator) Evaluate(cards ...card.Card) (PokerHand, bool) {
 	if len(cards) < 3 {
-		return BestHand{}, false
+		return PokerHand{}, false
 	}
 
 	rankGroup := make(map[card.Rank][]card.Card)
@@ -501,10 +579,10 @@ func (set threeOfAKindEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) {
 	}
 
 	if biggerSet == card.RankUnknown {
-		return BestHand{}, false
+		return PokerHand{}, false
 	}
 
-	best := &BestHand{Rank: set.Rank(), Cards: []card.Card{
+	best := &PokerHand{Rank: set.Rank(), Cards: []card.Card{
 		rankGroup[biggerSet][0],
 		rankGroup[biggerSet][1],
 		rankGroup[biggerSet][2],
@@ -538,7 +616,7 @@ func (two twoPairsEvaluator) Rank() HandRank {
 	return RankTwoParis
 }
 
-func (two twoPairsEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) {
+func (two twoPairsEvaluator) Evaluate(cards ...card.Card) (PokerHand, bool) {
 	return evaluateParis(2, two.Rank(), cards...)
 }
 
@@ -550,13 +628,13 @@ func (one onePairEvaluator) Rank() HandRank {
 	return RankOnePair
 }
 
-func (one onePairEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) {
+func (one onePairEvaluator) Evaluate(cards ...card.Card) (PokerHand, bool) {
 	return evaluateParis(1, one.Rank(), cards...)
 }
 
-func evaluateParis(c int, hr HandRank, cards ...card.Card) (BestHand, bool) {
+func evaluateParis(c int, hr HandRank, cards ...card.Card) (PokerHand, bool) {
 	if len(cards) < 2*c {
-		return BestHand{}, false
+		return PokerHand{}, false
 	}
 
 	rankGroup := make(map[card.Rank][]card.Card)
@@ -569,7 +647,7 @@ func evaluateParis(c int, hr HandRank, cards ...card.Card) (BestHand, bool) {
 	}
 
 	if len(pairs) < c {
-		return BestHand{}, false
+		return PokerHand{}, false
 	}
 	if len(pairs) > c { // 找到最大的对子
 		sort.Slice(pairs, func(i, j int) bool {
@@ -593,7 +671,7 @@ func evaluateParis(c int, hr HandRank, cards ...card.Card) (BestHand, bool) {
 		return kickers[i].Rank > kickers[j].Rank
 	})
 	outputCards = append(outputCards, kickers[:(5-len(outputCards))]...)
-	return BestHand{Rank: hr, Cards: outputCards[:]}, true
+	return PokerHand{Rank: hr, Cards: outputCards[:]}, true
 }
 
 func (high highCardEvaluator) MinimalCardCounts() int {
@@ -604,8 +682,8 @@ func (high highCardEvaluator) Rank() HandRank {
 	return RankHighCard
 }
 
-func (high highCardEvaluator) Evaluate(cards ...card.Card) (BestHand, bool) {
-	best := &BestHand{Rank: RankHighCard, Cards: []card.Card{}}
+func (high highCardEvaluator) Evaluate(cards ...card.Card) (PokerHand, bool) {
+	best := &PokerHand{Rank: RankHighCard, Cards: []card.Card{}}
 
 	switch len(cards) {
 	case 0:
@@ -632,7 +710,7 @@ func Register(e Evaluator) error {
 	return defaultEvaluatorManager.Register(e)
 }
 
-func Evaluate(cards ...card.Card) BestHand {
+func Evaluate(cards ...card.Card) PokerHand {
 	return defaultEvaluatorManager.Evaluate(cards...)
 }
 
