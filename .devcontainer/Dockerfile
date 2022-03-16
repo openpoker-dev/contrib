@@ -13,8 +13,8 @@ ENV GOPROXY="https://goproxy.cn,direct"
 RUN set -e \
     && sed -i "s/deb.debian.org/mirrors.aliyun.com/g" /etc/apt/sources.list \
     && sed -i "s/security.debian.org/mirrors.aliyun.com/g" /etc/apt/sources.list \
-    && apt-get update && export DEBIAN_FRONTEND=noninteractive \
-    && apt-get -y install --no-install-recommends protobuf-compiler
+    && apt-get update && export DEBIAN_FRONTEND=noninteractive
+    # && apt-get -y install --no-install-recommends protobuf-compiler
 
 # [Optional] Uncomment the next lines to use go get to install anything else you need
 # USER vscode
