@@ -670,8 +670,12 @@ func evaluateParis(c int, hr HandRank, cards ...card.Card) (PokerHand, bool) {
 	sort.Slice(kickers, func(i, j int) bool {
 		return kickers[i].Rank > kickers[j].Rank
 	})
-	outputCards = append(outputCards, kickers[:(5-len(outputCards))]...)
-	return PokerHand{Rank: hr, Cards: outputCards[:]}, true
+	if len(kickers)+len(outputCards) >= 5 {
+		outputCards = append(outputCards, kickers[:(5-len(outputCards))]...)
+	} else {
+		outputCards = append(outputCards, kickers...)
+	}
+	return PokerHand{Rank: hr, Cards: outputCards}, true
 }
 
 func (high highCardEvaluator) MinimalCardCounts() int {
