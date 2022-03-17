@@ -26,7 +26,7 @@ func TestDeckBurn(t *testing.T) {
 	deck := NewFiftyTwoCardsDeck()
 	deck.Shuffle()
 
-	for i := 0; i <= 51; i++ {
+	for i := 0; i < 52; i++ {
 		ok := deck.Burn()
 		assert.True(t, ok)
 	}
