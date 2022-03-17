@@ -18,7 +18,6 @@
 		"go.toolsManagement.checkForUpdates": "local",
 		"go.useLanguageServer": true,
 		"go.gopath": "/go",
-		"go.goroot": "/usr/local/go",
         "terminal.integrated.defaultProfile.linux": "zsh",
 		"terminal.integrated.defaultProfile.osx": "zsh",
 		"terminal.integrated.defaultProfile.windows": "zsh",
