@@ -1,8 +1,0 @@
-go 1.18
-
-use (
-	.
-	../card
-)
-
-replace github.com/openpoker-dev/contrib/card => ../card
